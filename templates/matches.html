@@ -1,0 +1,32 @@
+<!doctype html>
+<head>
+<meta name="viewport" content="width=device-width, user-scalable=0, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
+<link rel="stylesheet" href="{{ url_for("static", filename="style.css") }}" type="text/css">
+<script src="{{ url_for("static", filename="jquery-2.1.1.min.js") }}"></script>
+<script src="{{ url_for("static", filename="jquery.transit.min.js") }}"></script>
+<script type="text/javascript">
+
+</script>
+</head>
+<body style="overflow: auto">
+
+<div id="ideas">
+<div class="label">CONSENSUS IDEALS</div>
+{% for m in matches %}
+<div>
+<span class="l"><span class="bg">{{ m["a"] }}</span></span><span class="m">+</span><span class="r"><span class="bg">{{ m["b"] }}</span></span>
+</div>
+{% endfor %}
+<div class="label">CLOSE CALLS</div>
+{% for m in good_ones %}
+<div>
+<span class="l"><span class="bg">{{ m["a"] }}</span></span><span class="m">+</span><span class="r"><span class="bg">{{ m["b"] }}</span></span>
+</div>
+{% endfor %}
+</div>
+
+
+
+<div id="debug">
+</div>
+</body>

@@ -1,0 +1,181 @@
+<!doctype html>
+<head>
+<meta charset="utf-8">
+<title>💾🌵 bins | {{ bin }}</title>
+<link rel="stylesheet" href="{{ url_for("static", filename="wide-style.css") }}" type="text/css">
+<link rel="stylesheet" href="{{ url_for("static", filename="colorbox.css") }}" type="text/css">
+<script src="{{ url_for("static", filename="jquery-2.1.1.min.js") }}"></script>
+<script src="{{ url_for("static", filename="jquery.transit.min.js") }}"></script>
+<script src="{{ url_for("static", filename="jquery.colorbox.js") }}"></script>
+<script type="text/javascript" src="{{ url_for("static", filename="jquery.filedrop.js") }}"></script>
+<script type="text/javascript" src="{{ url_for("static", filename="jquery.lazyload.min.js") }}"></script>
+<script type="text/javascript">
+
+// function handleDrop(e) {
+//   e.stopPropagation(); // Stops some browsers from redirecting.
+//   e.preventDefault();
+
+//   var files = e.dataTransfer.files;
+//   for (var i = 0, f; f = files[i]; i++) {
+//   	console.log(f)
+//     // Read the File objects in this FileList.
+//   }
+// }
+String.prototype.endsWith = function(suffix) {
+    return this.indexOf(suffix, this.length - suffix.length) !== -1;
+};
+
+$(document).ready(function() {
+	console.log("READY")
+	
+	$("img.lazy").lazyload({
+    	threshold : 200
+	});
+	$(".item .title .delete").on("click", function(e) {
+		return confirm("Delete?")
+	})
+
+	// $(".item .content a.img").colorbox({rel: "bincontents", transition: "none", maxWidth: "80%", maxHeight: "80%", opacity: 0.5})
+	
+	$(".upload-type label").click(function(e) {
+		form = $(e.target).parent().find(".hidden-form")
+		form.slideToggle()
+	})
+
+	// Adapted from https://github.com/Bouni/HTML5-jQuery-Flask-file-upload
+	{% if logged_in %}
+	$("*").filedrop({
+		paramname: 'file',
+		maxfiles: 100,
+    	maxfilesize: 25,
+		url: '{{ url_for('add_to_bin', bin=bin) }}',
+		afterAll:function(i,file,response){
+			
+			window.location.reload()
+		},
+		
+    	error: function(err, file) {
+			switch(err) {
+				case 'BrowserNotSupported':
+					alert('Your browser does not support HTML5 file uploads!');
+					break;
+				case 'TooManyFiles':
+					alert('Too many files! Please select ' + this.maxfiles + ' at most!');
+					break;
+				case 'FileTooLarge':
+					alert(file.name + ' is too large! The size is limited to ' + this.maxfilesize + 'MB.');
+					break;
+				default:
+					break;
+			}
+		},
+		
+		beforeEach: function(file){
+			if(!file.type.match(/^image\//)){
+				// alert('Only images are allowed!');
+				// return false;
+			}
+		},
+		
+		uploadStarted:function(i, file, len){
+			// createImage(file);
+		},
+		
+		progressUpdated: function(i, file, progress) {
+			// $.data(file).find('.progress').width(progress);
+		},
+
+		docOver: function() {
+			$.colorbox({html:"<div class='modal'><h1>DROP TO UPLOAD</h1></div>", height: "50%"});
+		},
+		docLeave: function() {
+			$.colorbox.close()
+		},
+		drop: function() {
+			$.colorbox({html:"<div class='modal'><h1>UPLOADING...</h1><br><div id='uploading-percent'></div></div>", height: "50%"})
+		},
+		globalProgressUpdated: function(progress) {
+			$("#uploading-percent").text(progress + "%")
+		}
+    	 
+	});
+	{% endif %}
+})
+
+</script>
+</head>
+<body id="dropzone">
+<h1><img src="{{ url_for("static", filename="bins.png") }}" id="logo" ><a href="{{ url_for("index") }}">bins</a> / {{ bin }}</h1>
+<img src="http://diskcact.us/img/rainbow-hr.gif" class="hr">
+<div id="files_container">
+    {% for file in files %}
+    <div class="item{% if file[0].endswith("url") %} link {% elif file[1] == '#image' %} image {% elif file[1] %} textblock {% endif %}">
+    	{% if file[0].endswith(".url") %}
+	    	<div class="title link">
+	    		<a href="{{ file[1] }}" target="_blank">{{ file[0] }}</a>{% if logged_in %}<a href="{{ url_for("delete_file", bin=bin, file=file[0]) }}" class="delete">x</a>{% endif %}
+	    	</div>
+    	{% else %}
+
+	    	<div class="title">
+	    		<a href="{{ url_for("get_file", bin=bin, file=file[0]) }}" target="_blank">{{ file[0] }}</a>{% if logged_in %}<a href="{{ url_for("delete_file", bin=bin, file=file[0]) }}" class="delete">x</a>{% endif %}
+	    	</div>
+	    	
+	    	{% if file[1] == "#image" %}
+	    		<div class="content img">
+	        	<a href="{{ url_for("get_file", bin=bin, file=file[0]) }}"  target="_blank" class="img"><img class="lazy" data-original="{{ url_for("get_file", bin=bin, file=file[0]) }}"></a>
+	        	</div>
+
+	        {% elif file[1] %}
+	        	<div class="content textblock">
+	        	<div class="textblock">{{ file[1] }}</div>
+	        	</div>
+	        {% else %}
+	        	<!-- <a href="{{ url_for("view_file", bin=bin, file=file[0]) }}">{{ file[0] }}</a> -->
+	        {% endif %}
+	    {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+
+{% if logged_in %}
+<div id="upload">
+	<div class="upload-type" id="upload-file">
+		<form action="{{ url_for('add_to_bin', bin=bin) }}" enctype="multipart/form-data" method="POST">
+			<label for="file">Upload File</label>
+			<div class="hidden-form" id="upload-form">
+				<input type="file" name="file">
+				<br>
+				<input type="submit" value="OK">
+			</div>
+		</form>
+	</div>
+	<div class="upload-type" id="upload-text">
+		<form action="{{ url_for('add_to_bin', bin=bin) }}" method="POST">
+			<label for="name">Add Text</label>
+			<div class="hidden-form" id="addtext-form">
+				<input type="text" name="name" value="filename.txt">
+				<br>
+				<textarea name="text"></textarea>
+				<br>
+				<input type="submit" value="OK">
+			</div>
+		</form>
+	</div>
+	<div class="upload-type" id="upload-link">
+		<form action="{{ url_for('add_to_bin', bin=bin) }}" method="POST">
+			<label for="name">Add Link</label>
+			<div class="hidden-form" id="addtext-form">
+				<input type="text" name="name" value="title.url">
+				<input type="text" style="width: 400px; text-align: left;" name="url" value="http://">
+				<input type="submit" value="OK">
+			</div>
+		</form>
+	</div>	
+	
+</div>
+{% else %}
+<!-- <a href="{{ url_for('login') }}">log in</a> -->
+{% endif %}
+
+</body>

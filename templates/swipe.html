@@ -1,0 +1,299 @@
+<!doctype html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=0, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
+<title>💾🌵 consenual vibes</title>
+<link rel="stylesheet" href="{{ url_for("static", filename="mobile-style.css") }}" type="text/css">
+<script src="{{ url_for("static", filename="jquery-2.1.1.min.js") }}"></script>
+<script src="{{ url_for("static", filename="jquery.transit.min.js") }}"></script>
+<script type="text/javascript">
+loggedin = ""
+notification_timer = null
+notifications_lock = false
+n_users = 0
+
+$(document).ready(function() {
+    // POPULATE USER LIST
+    $.getJSON("{{ url_for('userlist', game=game) }}", function(data) {
+        $.each(data["users"], function(key, user) {
+            console.log(user)
+            selected = ""
+            if(data["loggedin"] == user)
+                selected = " SELECTED"
+                loggedin = data["loggedin"]
+
+            $("#user_select").append("<option value='" + user + "'" + selected + ">" + user + "</option>")
+            n_users++
+        })
+    })
+
+    // BIND SIMPLE LOGIN HANDLER
+    $("#user_select").change(function() {
+        $.post("{{ url_for('login', game=game) }}", data={"user": $("#user_select").find(":selected").text()}, function(data) {
+            console.log(data)
+            location.reload()
+        })
+    })
+
+    $("#phrase_container").on("touchstart mousedown", function(ev) {
+        //ev.preventDefault()
+        x = ev.clientX
+        y = ev.clientY
+
+        if(ev.originalEvent.touches != null && ev.originalEvent.touches.length == 1) {
+            $("#debug").text(ev.originalEvent.touches[0].pageX)
+            x = ev.originalEvent.touches[0].pageX
+            y = ev.originalEvent.touches[0].pageY
+        }
+        $("#phrase_container").addClass("dragging")
+        //$("#debug").text("TOUCHDOWN")
+        $("#phrase_container").attr("data-touchX", x)
+        $("#phrase_container").attr("data-touchY", y)
+    })
+    $("#phrase_container").on("touchend touchcancel mouseup", function() {
+        if($(this).hasClass("yes")) {
+            submitVote(1)
+        }
+        else if($(this).hasClass("no")) {
+            submitVote(-1)
+        }
+        else {
+            $(this).animate({x: 0, y: 0}, 500)
+        }
+
+        $(this).removeClass("dragging")
+        $(this).removeClass("yes")
+        $(this).removeClass("no")
+        // $("#phrase_a, #phrase_b").removeClass("yes")
+        // $("#phrase_a, #phrase_b").removeClass("no")
+    })
+    $("#phrase_container").on("touchmove mousemove", function(ev) {
+        ev.preventDefault()
+        if(!$("#phrase_container").hasClass("dragging")) return
+        //$("#debug").text("DRAGGING")
+
+        x = ev.clientX
+        y = ev.clientY
+        if(ev.originalEvent.touches != null && ev.originalEvent.touches.length == 1) {
+            //$("#debug").text(ev.originalEvent.touches[0].pageX)
+            x = ev.originalEvent.touches[0].pageX
+            y = ev.originalEvent.touches[0].pageY
+        }
+
+        dX = x - $(this).attr("data-touchX")
+        dY = y - $(this).attr("data-touchY")
+        $(this).animate({x: dX, y: dY}, 0)
+
+        center_x = $(this).offset()["left"] - $("#phrase_container").width()/2
+        $("#debug").text(center_x + " / " + ($(window).width()*.35))
+        if($(this).offset()["left"] > ($(window).width() * .35)) {
+            $(this).addClass("yes")
+            //$("#phrase_a, #phrase_b").addClass("yes")
+        }
+        else if($(this).offset()["left"] < -($(window).width() * .35)) {
+            $(this).addClass("no")
+            //$("#phrase_a, #phrase_b").addClass("no")
+        }
+        else {
+            $(this).removeClass("yes")
+            $(this).removeClass("no")
+            // $("#phrase_a, #phrase_b").removeClass("yes")
+            // $("#phrase_a, #phrase_b").removeClass("no")
+        }
+    })
+
+    $("#vote_no").click(function() {
+        submitVote(-1)
+    })
+    $("#vote_yes").click(function() {
+        submitVote(1)
+    })
+
+    // MAKE THE SPINNER SPIN
+    spinner()
+    // LOAD FIRST IDEA
+    nextPhrase()
+    // START NOTIFICATION TIMER
+    notification_timer = window.setInterval(function() { check_notifications(); }, 5000)
+    toggle_notifications()
+
+    $("#notification_count").click(function() { toggle_notifications() })
+    $("#close_notifications").click(function() { toggle_notifications() })
+})
+
+spinnerRot = 0;
+function spinner() {
+    //$("#spinner").transition({rotate: '+=360deg'}, 1000, "linear", function() { spinner() })
+    spinnerRot += 360;
+    // $("#spinner").transition({perspective: '100px', rotate3d: '.1,1,0,' + spinnerRot + 'deg'}, 1000, "linear", function() { spinner() })
+    $("#spinner").transition({rotate: '+=36deg'}, 100, "linear", function() { spinner() })
+    //$("#spinner").transition({perspective: '300px', rotate3d: '.1,1,0,' + (spinnerRot/2) + 'deg'}, 1000, "linear")
+    
+}
+
+function submitVote(rating) {
+    $("#phrase_container").fadeOut(300)
+    $("#spinner").stop().fadeIn(2000);
+    //spinner();
+    id = $("#phrase").prop("data-id")
+    $.post("/{{game}}/phrase/" + id + "/rating", data={"rating": rating}, function(response) {
+        tallyRatings(response["ratings"]);
+        nextPhrase();
+    })
+}
+
+function tallyRatings(ratings) {
+    myRating = ratings[loggedin]
+    sum = 0
+    $.each(ratings, function(user, rating) {
+        sum += rating
+    })
+
+    if(sum == n_users) {
+        show_message("IT'S A MATCH")
+        $("#match_sound")[0].play()
+    }
+    else if(sum >= n_users/2.0 && myRating > 0) {
+    // else if(sum == n_users-1 && myRating > 0) {
+        show_message("WE'RE FEELING THAT VIBE")
+    }
+    else if(sum == 2 && myRating > 0) {
+    // else if(sum == n_users-1 && myRating > 0) {
+        show_message("THAT'S A GOOD ONE")
+    }
+    else if(sum == n_users-2 && myRating < 0) {
+        show_message("YOU KILLED THE VIBE")
+    }
+}
+
+function nextPhrase() {
+    $("#phrase_container").animate({x: 0, y: 0}, 0)
+    $.getJSON("/{{game}}/phrase", function(data) {
+        $("#phrase_a .word").text(data["a"])
+        $("#phrase_b .word").text(data["b"])
+        $("#phrase").prop("data-id", data["id"])
+        $("#phrase_container").offset({
+            //top: $(window).height()/2 - $("#phrase_container").height()/2,
+            //left: $(window).width()/2 - $("#phrase_container").width()/2,
+        })
+        $("#phrase_container").fadeIn(300)
+        $("#spinner").stop().fadeOut(300);
+        //spinner();
+    })
+}
+
+function show_message(text) {
+    $("#message").text(text)
+    $("#message").fadeIn(200).delay(5000).fadeOut(500)
+}
+
+function check_notifications(all) {
+    if(notifications_lock) return;
+    notifications_lock = true;
+    $.getJSON(all ? "/{{game}}/notifications" : "/{{game}}/notifications/unread", function(response) {
+        
+        unread = 0
+        $.each(response["notifications"], function(idx, n) {
+            el = $("<div class='notification'>" + n["text"] + "</div>")
+            if(!n["read"]) {
+                el.addClass("unread")
+                unread++
+            }
+            //unread++
+            el.attr("data-id", n["id"])
+            // Add this one in if it doesn't yet exist
+            if($("#notifications div[data-id=" + n["id"] + "]").length == 0) {
+                $(all ? "#old_notifications" : "#notifications").prepend(el)    
+                el.hide();
+                el.slideDown(500);
+            }
+        })
+        // Update notifications counter
+        more = unread > ($("#notification_count").text() || 0)
+        $("#notification_count").text(unread > 0 ? unread : ">")
+        if(more)
+            $("#notification_count").transition({"scale": "1.5"}, 400).transition({"scale": "1"}, 400)
+
+        if(unread > 0) {
+            $("#notification_count").removeClass("empty")
+        }
+        else {
+            $("#notification_count").addClass("empty")
+        }
+        
+        notifications_lock = false;
+        
+    }, error = function() { notifications_lock = false; })
+}
+
+function toggle_notifications() {
+    if($("#notifications_container").hasClass("closed")) {
+        // Un-hide the notifications drawer
+        $("#notifications_container").removeClass("closed")
+        $("#notifications_container").css("left", "-100%")
+        $("#notifications_container").show()
+        $("#notifications").scrollTop(0)
+        $("#notifications_container").animate({"left": "0"}, 500)
+        // Tell the server all notifications are read
+        $.post("{{ url_for("read_all_notifications", game=game) }}")
+        $("#notification_count").addClass("hidden")   
+    }
+    else {
+        $("#notifications_container").animate({"left": "-100%"}, 500, function() {
+            $("#notifications_container").hide()
+            $("#notifications_container").addClass("closed");
+            $("#notification_count").removeClass("hidden")
+        });
+    }
+}
+
+</script>
+</head>
+<body>
+<!-- <div id="login">
+YOU: <select name="user" id="user_select">
+    <option value="">--</option>
+</select>
+</div> -->
+<div id="phrase_container">
+    <div id="phrase">
+    <div id="phrase_a">
+    <span id="phrase_a" class="word">
+    </span>
+    </div>
+    <div id="phrase_plus">
+    +
+    </div>
+    <div id="phrase_b">
+    <span id="phrase_b" class="word">
+    </span>
+    </div>
+    </div>
+</div>
+
+<a href="/matches">
+<marquee scrollamount="30" id="message">
+test
+</marquee>
+</a>
+<div id="spinner">
+######
+</div>
+
+<div id="notification_count"></div>
+<div id="notifications_container" class="hidden">
+    <div id="close_notifications">
+    x
+    </div>
+    <div id="notifications">
+        <div id="old_notifications"></div>
+        <div class="showall">
+        - <a href="#" onClick="check_notifications(true); return false;">Show Older</a> -
+        </div>
+    </div>
+</div>
+<div id="debug">
+</div>
+
+<audio src="{{ url_for('static', filename='match.wav') }}" type="audio/wav" hidden=1 id="match_sound">
+</body>
