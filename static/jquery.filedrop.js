@@ -98,7 +98,6 @@
         return;
       files = e.dataTransfer.files;
       if (files === null || files === undefined || files.length === 0) {
-        console.log(e)
         opts.error(errors[0]);
         return false;
       }
