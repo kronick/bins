@@ -1,14 +1,22 @@
 #coding=utf-8
-from flask import Flask, request, url_for, redirect, render_template, jsonify, json, session, send_from_directory, flash
+import mimetypes
+from flask import Flask, url_for, redirect, render_template, jsonify, json, session, send_from_directory, flash, request, send_file, Response
 from functools import wraps
-import os, subprocess, random, time
+import os, os.path, subprocess, random, time, re
 import sqlite3
 from werkzeug import secure_filename
+import urllib
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'html', 'md'])
+UPLOAD_FOLDER = u'uploads'
+ALLOWED_EXTENSIONS = set([u'txt', u'pdf', u'png', u'jpg', u'jpeg', u'gif', u'html', u'md'])
 
 app = Flask(__name__)
+
+# Allow partial media requests (for large video files)
+@app.after_request
+def after_request(response):
+    response.headers.add('Accept-Ranges', 'bytes')
+    return response
 
 # Get rid of the weird bins.fcgi at the end of the URL
 def strip_suffix(app, suffix):
@@ -23,7 +31,7 @@ app.wsgi_app = strip_suffix(app.wsgi_app, '/bins.fcgi')
 
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config["APPLICATION_ROOT"] = "/bins/"
+#app.config["APPLICATION_ROOT"] = u"/bins/"
 
 def authenticate(f):
     ''' Function used to decorate routes that require user login '''
@@ -44,6 +52,10 @@ def allowed_file(filename):
 @app.route("/info")
 def info():
     return "<br>".join(dir(app))
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory("static", "favicon.ico")
 
 @app.route("/")
 def index():
@@ -71,16 +83,24 @@ def logout():
             
 @app.route("/<bin>", methods=["GET"])
 def show_bin(bin):
-    bin = secure_filename(bin)
+    bin = safer_filename(bin)
 
     # Generate list of files
     # files = [("xyz.png", "image"), ("something.md", "text"), ("abc.gif", "image")]
     filenames = [f for f in os.listdir(os.path.join(app.config['UPLOAD_FOLDER'], bin)) if not f.startswith(".")];
     files = []
     for f in filenames:
-        if f.endswith(".png") or f.endswith(".gif") or f.endswith(".jpg") or f.endswith(".jpeg") or f.endswith(".webp") or \
-           f.endswith(".PNG") or f.endswith(".GIF") or f.endswith(".JPG") or f.endswith(".JPEG") or f.endswith(".WEBP"):
+        if f.lower().endswith(".png") or f.lower().endswith(".gif") or f.lower().endswith(".jpg") or f.lower().endswith(".jpeg") or f.lower().endswith(".webp"):
             files.append((f, "#image"))
+        elif f.lower().endswith(".mp4")or f.lower().endswith(".mov")or f.lower().endswith(".avi") or f.lower().endswith(".mkv") or \
+           f.lower().endswith(".m4v") or f.lower().endswith(".flv") or f.lower().endswith(".asf") or f.lower().endswith(".mpg") or \
+           f.lower().endswith(".mpeg") or f.lower().endswith(".ogg") or f.lower().endswith(".swf") or f.lower().endswith(".wmv"):
+            thumbnail_file = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(f))
+            thumbnail_url = url_for("get_thumbnail", bin=bin, file=f)
+            print thumbnail_file
+            if not os.path.isfile(thumbnail_file):
+                thumbnail_url = url_for("static", filename="thumbnail_pending.png")
+            files.append((f, "#video", thumbnail_url))
         elif f.endswith(".txt"):
             with open(os.path.join(app.config['UPLOAD_FOLDER'], bin, f)) as fp:
                 files.append((f, fp.read().decode("utf8")))    
@@ -99,23 +119,38 @@ def show_bin(bin):
 @app.route("/bins", methods=["POST"])
 @authenticate
 def create_bin():
-    bin = secure_filename(request.form["bin_name"])
+    bin = safer_filename(request.form["bin_name"])
     os.mkdir(os.path.join(app.config['UPLOAD_FOLDER'], bin))
+    os.mkdir(os.path.join(app.config['UPLOAD_FOLDER'], bin, "thumbnails"))
     return redirect(url_for("show_bin", bin=bin))
 
 @app.route("/<bin>", methods=["POST"])
 @authenticate
 def add_to_bin(bin):
-    bin = secure_filename(bin)
+    bin = safer_filename(bin)
     if request.files:
         file = request.files['file']
         if file: # and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], bin, filename))
+            filename = safer_filename(urllib.unquote(file.filename))
+            print file.filename
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, filename)
+            file.save(file_path)
+
+            # Check if file is a video
+            duration = subprocess.check_output(u"ffprobe -i '{0}' -show_format -v quiet | sed -n 's/duration=//p'".format(file_path), shell=True)
+            if duration != '':
+                # Create a thumbnail using a frame from the middle of the video
+                thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(filename))
+                timecode = float(duration) / 2
+                timecode = min(10, float(duration))
+                thumbnail_command = u"ffmpeg -y -itsoffset -{2} -i '{0}' -vcodec mjpeg -vframes 1 -an -f rawvideo -s 400x300 '{1}'".format(file_path, thumbnail_path, timecode)
+                
+                subprocess.Popen(thumbnail_command, shell=True)
+
             return redirect(url_for('show_bin',
                                     bin=bin))
     else:
-        filename = secure_filename(request.form["name"])
+        filename = safer_filename(urllib.unquote(request.form["name"]))
         if len(filename) == 0:
             filename = str(int(time.time()))
         if request.form.has_key("text"):
@@ -134,23 +169,30 @@ def add_to_bin(bin):
 
 @app.route("/<bin>/<file>", methods=["GET"])
 def get_file(bin, file):
-    bin = secure_filename(bin)
-    file = secure_filename(file)
-    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], bin), file)
+    bin = safer_filename(bin)
+    file = safer_filename(file)
+    #return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], bin), file)
+    return send_file_partial(os.path.join(app.config['UPLOAD_FOLDER'], bin, file))
 
 @app.route("/<bin>/view/<file>", methods=["GET"])
 def view_file(bin, file):
-    bin = secure_filename(bin)
-    file = secure_filename(file)
+    bin = safer_filename(bin)
+    file = safer_filename(file)
     if file.lower().endswith(".jpg") or file.lower().endswith(".png") or file.lower().endswith(".gif") or file.lower().endswith(".jpeg"):
         return render_template("image.html", bin=bin, file=file)
     else:
         return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], bin), file)
 
+@app.route("/<bin>/thumbnails/<file>", methods=["GET"])
+def get_thumbnail(bin, file):
+    bin = safer_filename(bin)
+    file = safer_filename(file)
+    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(file)))  
+
 @app.route("/<bin>/delete/<file>", methods=["GET", "POST"])
 @authenticate
 def delete_file(bin, file):
-    file = secure_filename(file)
+    file = safer_filename(file)
     try:
         os.unlink(os.path.join(app.config['UPLOAD_FOLDER'], bin, file))
         success = True
@@ -165,6 +207,60 @@ def delete_file(bin, file):
 @app.errorhandler(404)
 def notfound(error):
     return redirect(url_for('index'))
+
+
+# via http://blog.asgaard.co.uk/2012/08/03/http-206-partial-content-for-flask-python 
+def send_file_partial(path):
+    """ 
+        Simple wrapper around send_file which handles HTTP 206 Partial Content
+        (byte ranges)
+        TODO: handle all send_file args, mirror send_file's error handling
+        (if it has any)
+    """
+    range_header = request.headers.get('Range', None)
+    if not range_header: return send_file(path)
+    
+    size = os.path.getsize(path)    
+    byte1, byte2 = 0, None
+    
+    m = re.search('(\d+)-(\d*)', range_header)
+    g = m.groups()
+    
+    if g[0]: byte1 = int(g[0])
+    if g[1]: byte2 = int(g[1])
+
+    length = size - byte1
+    if byte2 is not None:
+        length = byte2 - byte1
+    
+    data = None
+    with open(path, 'rb') as f:
+        f.seek(byte1)
+        data = f.read(length)
+
+    rv = Response(data, 
+        206,
+        mimetype=mimetypes.guess_type(path)[0], 
+        direct_passthrough=True)
+    rv.headers.add('Content-Range', 'bytes {0}-{1}/{2}'.format(byte1, byte1 + length - 1, size))
+
+    return rv   
+
+def safer_filename(filename):
+    """ Return a somewhat sanatized filename
+        Just replace separators but preserve spaces
+        TODO: Also preserve unicode (needs to be supported everywhere else)
+    """
+    # if isinstance(filename, str) or isinstance(filename, unicode):
+    #     from unicodedata import normalize
+    #     filename = normalize('NFKD', filename).encode('ascii', 'ignore')
+    #     # if not PY2:
+    #     #     filename = filename.decode('ascii')
+
+    for sep in os.path.sep, os.path.altsep:
+        if sep:
+            filename = filename.replace(sep, ' ') 
+    return filename
 
 app.secret_key = "the ambulance chasers of venture capital"
 app.debug = True

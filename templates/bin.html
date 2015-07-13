@@ -47,7 +47,7 @@ $(document).ready(function() {
 	$("*").filedrop({
 		paramname: 'file',
 		maxfiles: 100,
-    	maxfilesize: 25,
+    	maxfilesize: 1024*2,
 		url: '{{ url_for('add_to_bin', bin=bin) }}',
 		afterAll:function(i,file,response){
 			
@@ -123,6 +123,11 @@ $(document).ready(function() {
 	    	{% if file[1] == "#image" %}
 	    		<div class="content img">
 	        	<a href="{{ url_for("get_file", bin=bin, file=file[0]) }}"  target="_blank" class="img"><img class="lazy" data-original="{{ url_for("get_file", bin=bin, file=file[0]) }}"></a>
+	        	</div>
+
+	        {% elif file[1] == "#video" %}
+	    		<div class="content img">
+	        	<a href="{{ url_for("get_file", bin=bin, file=file[0]) }}"  target="_blank" class="img"><img class="lazy" data-original="{{ file[2] }}"></a>
 	        	</div>
 
 	        {% elif file[1] %}
