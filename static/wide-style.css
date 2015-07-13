@@ -15,8 +15,9 @@ body {
     color: rgb(100,255,100);
 
     overflow-x: hidden;
+    min-height: 100%;
 
-    margin: 20;
+    margin: 0px;
     margin-bottom: 2em;
     line-height: 1.5em;
 }
@@ -79,8 +80,8 @@ h1 {
 #files_container .item .title {
     color: white;
     width: 100%;
-    text-align: right;
-    /*background-color: blue;*/
+    text-align: center;
+    background-color: blue;
 }
 #files_container .item .title.link {
     text-align: center;
@@ -155,6 +156,7 @@ h1 {
 
 
 #upload {
+    display: none;
     position: fixed;
     bottom: 0;
     background-color: rgba(0,0,0,0.25);
@@ -189,4 +191,11 @@ label {
     vertical-align: middle;
     margin-right: 1em;
     margin-left: 1em;
+}
+
+#fine-uploader {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    margin: 0;
 }

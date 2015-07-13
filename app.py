@@ -7,10 +7,26 @@ import sqlite3
 from werkzeug import secure_filename
 import urllib
 
+import em2moji
+
 UPLOAD_FOLDER = u'uploads'
 ALLOWED_EXTENSIONS = set([u'txt', u'pdf', u'png', u'jpg', u'jpeg', u'gif', u'html', u'md'])
 
 app = Flask(__name__)
+
+
+
+def make_response(status=200, content=None):
+    """ Construct a response to an upload request.
+    Success is indicated by a status of 200 and { "success": true }
+    contained in the content.
+    Also, content-type is text/plain by default since IE9 and below chokes
+    on application/json. For CORS environments and IE9 and below, the
+    content-type needs to be text/html.
+    """
+    return app.response_class(json.dumps(content,
+        indent=None if request.is_xhr else 2), mimetype='text/plain')
+
 
 # Allow partial media requests (for large video files)
 @app.after_request
@@ -43,6 +59,7 @@ def authenticate(f):
     return new_f
 
 def logged_in():
+    #return True
     return session.has_key("loggedin") and session["loggedin"] == "yes";
 
 def allowed_file(filename):
@@ -96,11 +113,18 @@ def show_bin(bin):
            f.lower().endswith(".m4v") or f.lower().endswith(".flv") or f.lower().endswith(".asf") or f.lower().endswith(".mpg") or \
            f.lower().endswith(".mpeg") or f.lower().endswith(".ogg") or f.lower().endswith(".swf") or f.lower().endswith(".wmv"):
             thumbnail_file = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(f))
-            thumbnail_url = url_for("get_thumbnail", bin=bin, file=f)
-            print thumbnail_file
+            thumbnail_url = url_for("get_thumbnail", bin=bin, file=u"{}.jpg".format(f))
             if not os.path.isfile(thumbnail_file):
                 thumbnail_url = url_for("static", filename="thumbnail_pending.png")
             files.append((f, "#video", thumbnail_url))
+
+        elif f.lower().endswith("pdf"):
+            thumbnail_file = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.gif".format(f))
+            thumbnail_url = url_for("get_thumbnail", bin=bin, file=u"{}.gif".format(f))
+            if not os.path.isfile(thumbnail_file):
+                thumbnail_url = url_for("static", filename="thumbnail_pending.png")
+            files.append((f, "#video", thumbnail_url))
+
         elif f.endswith(".txt"):
             with open(os.path.join(app.config['UPLOAD_FOLDER'], bin, f)) as fp:
                 files.append((f, fp.read().decode("utf8")))    
@@ -129,26 +153,40 @@ def create_bin():
 def add_to_bin(bin):
     bin = safer_filename(bin)
     if request.files:
-        file = request.files['file']
+        file = request.files['qqfile']
         if file: # and allowed_file(file.filename):
-            filename = safer_filename(urllib.unquote(file.filename))
-            print file.filename
+            filename = safer_filename(urllib.unquote(request.form["qqfilename"]))
+            if filename == "image.jpg":
+                filename = u"{}.jpg".format(em2moji.get_emoji(request.form["qquuid"]))
+                print filename
+
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, filename)
             file.save(file_path)
 
             # Check if file is a video
-            duration = subprocess.check_output(u"ffprobe -i '{0}' -show_format -v quiet | sed -n 's/duration=//p'".format(file_path), shell=True)
-            if duration != '':
+            f = filename
+            duration = subprocess.check_output(u"ffprobe -i '{0}' -show_format -v quiet | sed -n 's/duration=//p'".format(file_path.replace("'", "'\\''")), shell=True)
+            if duration != '' and (f.lower().endswith(".mp4")or f.lower().endswith(".mov")or f.lower().endswith(".avi") or f.lower().endswith(".mkv") or \
+                 f.lower().endswith(".m4v") or f.lower().endswith(".flv") or f.lower().endswith(".asf") or f.lower().endswith(".mpg") or \
+                 f.lower().endswith(".mpeg") or f.lower().endswith(".ogg") or f.lower().endswith(".swf") or f.lower().endswith(".wmv")):
                 # Create a thumbnail using a frame from the middle of the video
                 thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(filename))
                 timecode = float(duration) / 2
                 timecode = min(10, float(duration))
-                thumbnail_command = u"ffmpeg -y -itsoffset -{2} -i '{0}' -vcodec mjpeg -vframes 1 -an -f rawvideo -s 400x300 '{1}'".format(file_path, thumbnail_path, timecode)
+                thumbnail_command = u"ffmpeg -y -itsoffset -{2} -i '{0}' -vcodec mjpeg -vframes 1 -an -f rawvideo -s 400x300 '{1}'".format(file_path.replace("'", "'\\''"), thumbnail_path.replace("'", "'\\''"), timecode)
                 
                 subprocess.Popen(thumbnail_command, shell=True)
 
-            return redirect(url_for('show_bin',
-                                    bin=bin))
+            # Make animated gif 
+            # Requires Ghostscript gs to perform pdf conversion
+            elif f.lower().endswith("pdf"):
+                thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.gif".format(filename))
+                thumbnail_command = "convert -thumbnail 400 -delay 10 '{0}' '{1}'".format(file_path.replace("'", "'\\''"), thumbnail_path.replace("'", "'\\''"))
+                print thumbnail_command
+                subprocess.Popen(thumbnail_command, shell=True)
+            # return redirect(url_for('show_bin',
+            #                         bin=bin))
+            return make_response(200, { "success": True })
     else:
         filename = safer_filename(urllib.unquote(request.form["name"]))
         if len(filename) == 0:
@@ -187,7 +225,7 @@ def view_file(bin, file):
 def get_thumbnail(bin, file):
     bin = safer_filename(bin)
     file = safer_filename(file)
-    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.jpg".format(file)))  
+    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", file))  
 
 @app.route("/<bin>/delete/<file>", methods=["GET", "POST"])
 @authenticate
