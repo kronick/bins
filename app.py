@@ -181,7 +181,7 @@ def add_to_bin(bin):
             # Requires Ghostscript gs to perform pdf conversion
             elif f.lower().endswith("pdf"):
                 thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], bin, u"thumbnails", u"{}.gif".format(filename))
-                thumbnail_command = "convert -thumbnail 400 -delay 10 '{0}' '{1}'".format(file_path.replace("'", "'\\''"), thumbnail_path.replace("'", "'\\''"))
+                thumbnail_command = "convert -thumbnail 400 -delay 100 '{0}' '{1}'".format(file_path.replace("'", "'\\''"), thumbnail_path.replace("'", "'\\''"))
                 print thumbnail_command
                 subprocess.Popen(thumbnail_command, shell=True)
             # return redirect(url_for('show_bin',
